@@ -26,6 +26,7 @@ uint8_t  read_btn(uint8_t);
 uint8_t debounce(uint8_t  *button_history,uint8_t);
 void setupPCM () ;
 void stopPCM () ;
+void check_inputs_fn(void);
 
 uint8_t mute_history=0;
 uint8_t volp_history=0;
@@ -38,6 +39,7 @@ const uint8_t PRSB=0x01;
 const uint8_t PRSV=0x02;
 volatile uint8_t  turnDirection=0;//is given a control code when detecting a wheel movement in either direction (JVC_R or JVC_F )
 volatile uint8_t emit=0;
+volatile uint8_t check_inputs = 0;
 
 //Command constants
 
@@ -56,6 +58,7 @@ void setup() {
 	DDRB &=~ _BV(REMOTE_BROWN);
 	REMOTEPORT|= _BV(REMOTE_BROWN);//pull up sur PB3 (marron, contact commun molette)
 	sei();
+	//AVR Manual: WDT Timeout is 4 or 64 ms
 	//watchdog configuration
 	WDTCR |= (1<<WDIE);//generate interrupt after each time out
 	//TCNT0=0;
@@ -265,22 +268,34 @@ int main() {
 	setup();
 	uint8_t dir =0;
 	while(1){
-		if (emit>0){
-			dir=emit;
-			emit=0;
-			transmit(JVC_ADDRESS,dir);
-		}
+		cli();
+		if(check_inputs){
+			sei();
+			check_inputs_fn();
+			if (emit>0){
+				dir=emit;
+				emit=0;
+				transmit(JVC_ADDRESS,dir);
+			}
 
-		if (turnDirection>0){
-			dir=turnDirection;
-			turnDirection=0;
-			transmit(JVC_ADDRESS,dir);
+			if (turnDirection>0){
+				dir=turnDirection;
+				turnDirection=0;
+				transmit(JVC_ADDRESS,dir);
+			}
+			cli();	//Not sure if this is truly necessary.  We might be able to just
+				//Treat check_inputs as a boolean (and change the ISR respectively)
+			check_inputs = check_inputs == 0 ? 0 : check_inputs-1;
+			sei();
 		}
-
+		else{
+			sei();
+		}
 	}
 }
 
-ISR (WDT_vect){
+void check_inputs_fn(void)
+{
 	if (debounce(&volp_history,0x02)==1){
 		emit=JVC_VOLP;
 	}
@@ -297,6 +312,10 @@ ISR (WDT_vect){
 		emit=JVC_SRC1;
 	}
 
+}
+
+ISR (WDT_vect){
+	check_inputs++;
 }
 
 /*Why not use fast PWM mode instead, since it has well defined levels, instead o toggle and messing around with force output compare?
