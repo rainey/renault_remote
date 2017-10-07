@@ -121,10 +121,12 @@ void sendCode (uint16_t code) {
 }
 
 void transmit(uint8_t address,uint8_t code){
+	cli();
 	preamble();
 	setupPCM();
 	sendCode((JVC_ADDRESS<<8)+code);
 	stopPCM();
+	sei();
 }
 
 /**
